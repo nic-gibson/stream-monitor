@@ -12,6 +12,19 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// streamFetchConcurrency limits parallel Redis calls per collect (XINFO per stream).
+const streamFetchConcurrency = 32
+
+type streamFetchResult struct {
+	stream    string
+	infoOK    bool
+	info      *redis.XInfoStream
+	infoErr   error
+	groupsOK  bool
+	groups    []redis.XInfoGroup
+	groupsErr error
+}
+
 type streamCollector struct {
 	rdb         *redis.Client
 	mu          sync.RWMutex
@@ -141,6 +154,8 @@ func (c *streamCollector) collect(ctx context.Context) {
 		return
 	}
 
+	results := c.fetchAllStreams(ctx, streams)
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -149,26 +164,26 @@ func (c *streamCollector) collect(ctx context.Context) {
 
 	var metricSnapshots []streamMetricSnapshot
 	if c.metricsLog != nil {
-		metricSnapshots = make([]streamMetricSnapshot, 0, len(streams))
+		metricSnapshots = make([]streamMetricSnapshot, 0, len(results))
 	}
 
-	for _, stream := range streams {
+	for _, r := range results {
+		stream := r.stream
 		seenStreams[stream] = true
 
-		info, err := c.rdb.XInfoStream(ctx, stream).Result()
-		if err != nil {
-			if !strings.Contains(err.Error(), "no such key") {
-				log.Error().Err(err).Str("stream", stream).Msg("stream info")
+		if !r.infoOK {
+			if r.infoErr != nil && !strings.Contains(r.infoErr.Error(), "no such key") {
+				log.Error().Err(r.infoErr).Str("stream", stream).Msg("stream info")
 			}
 			continue
 		}
 
+		info := r.info
 		c.gauges.streamLength.WithLabelValues(stream).Set(float64(info.Length))
 		c.gauges.streamEntriesAdd.WithLabelValues(stream).Set(float64(info.EntriesAdded))
 
-		groups, err := c.rdb.XInfoGroups(ctx, stream).Result()
-		if err != nil {
-			log.Error().Err(err).Str("stream", stream).Msg("stream consumer groups")
+		if !r.groupsOK {
+			log.Error().Err(r.groupsErr).Str("stream", stream).Msg("stream consumer groups")
 			c.gauges.streamGroups.WithLabelValues(stream).Set(0)
 			if c.metricsLog != nil {
 				metricSnapshots = append(metricSnapshots, streamMetricSnapshot{
@@ -181,6 +196,7 @@ func (c *streamCollector) collect(ctx context.Context) {
 			continue
 		}
 
+		groups := r.groups
 		c.gauges.streamGroups.WithLabelValues(stream).Set(float64(len(groups)))
 
 		var snap streamMetricSnapshot
@@ -220,6 +236,64 @@ func (c *streamCollector) collect(ctx context.Context) {
 	c.prevGroups = seenGroups
 
 	c.emitMetricSnapshots(metricSnapshots)
+}
+
+func (c *streamCollector) fetchStreamData(ctx context.Context, stream string) streamFetchResult {
+	r := streamFetchResult{stream: stream}
+	info, err := c.rdb.XInfoStream(ctx, stream).Result()
+	if err != nil {
+		r.infoErr = err
+		return r
+	}
+	r.infoOK = true
+	r.info = info
+
+	groups, err := c.rdb.XInfoGroups(ctx, stream).Result()
+	if err != nil {
+		r.groupsErr = err
+		return r
+	}
+	r.groupsOK = true
+	r.groups = groups
+	return r
+}
+
+// fetchAllStreams runs XINFO STREAM / XINFO GROUPS for each name using a bounded worker pool.
+func (c *streamCollector) fetchAllStreams(ctx context.Context, streams []string) []streamFetchResult {
+	if len(streams) == 0 {
+		return nil
+	}
+
+	workers := streamFetchConcurrency
+	if len(streams) < workers {
+		workers = len(streams)
+	}
+
+	jobs := make(chan string)
+	var outMu sync.Mutex
+	out := make([]streamFetchResult, 0, len(streams))
+
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for stream := range jobs {
+				res := c.fetchStreamData(ctx, stream)
+				outMu.Lock()
+				out = append(out, res)
+				outMu.Unlock()
+			}
+		}()
+	}
+
+	for _, s := range streams {
+		jobs <- s
+	}
+	close(jobs)
+	wg.Wait()
+
+	return out
 }
 
 func (c *streamCollector) emitMetricSnapshots(streams []streamMetricSnapshot) {
