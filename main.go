@@ -46,7 +46,29 @@ func main() {
 	}
 	log.Info().Str("addr", cfg.Redis.Addr).Msg("connected to Redis")
 
-	collector := newStreamCollector(rdb)
+	var metricsLog *zerolog.Logger
+	var metricsLogFile *os.File
+	if cfg.LogMetrics {
+		if cfg.LogMetricsFile != "" {
+			f, err := os.OpenFile(cfg.LogMetricsFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				log.Fatal().Err(err).Str("path", cfg.LogMetricsFile).Msg("open metrics log file")
+			}
+			metricsLogFile = f
+			l := zerolog.New(f).With().Timestamp().Logger()
+			metricsLog = &l
+			log.Info().Str("path", cfg.LogMetricsFile).Msg("metric logs (JSON) will be written to file")
+		} else {
+			l := zerolog.New(os.Stdout).With().Timestamp().Logger()
+			metricsLog = &l
+			log.Info().Msg("metric logs (JSON) will be written to stdout")
+		}
+	}
+	if metricsLogFile != nil {
+		defer metricsLogFile.Close()
+	}
+
+	collector := newStreamCollector(rdb, metricsLog)
 	prometheus.MustRegister(collector)
 
 	http.Handle("/metrics", promhttp.Handler())

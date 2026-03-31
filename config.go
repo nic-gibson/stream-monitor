@@ -10,9 +10,11 @@ import (
 )
 
 type config struct {
-	Redis        redisConfig `mapstructure:"redis"`
-	PollInterval time.Duration `mapstructure:"poll_interval"`
-	ListenAddr   string        `mapstructure:"listen_addr"`
+	Redis          redisConfig     `mapstructure:"redis"`
+	PollInterval   time.Duration   `mapstructure:"poll_interval"`
+	ListenAddr     string          `mapstructure:"listen_addr"`
+	LogMetrics     bool            `mapstructure:"log_metrics"`
+	LogMetricsFile string          `mapstructure:"log_metrics_file"`
 }
 
 type redisConfig struct {
@@ -39,6 +41,8 @@ func loadConfig() (*config, error) {
 	v.SetDefault("redis.tls_ca_cert", "")
 	v.SetDefault("poll_interval", 30*time.Second)
 	v.SetDefault("listen_addr", ":9090")
+	v.SetDefault("log_metrics", false)
+	v.SetDefault("log_metrics_file", "")
 
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
@@ -63,6 +67,8 @@ func loadConfig() (*config, error) {
 	pflag.String("redis-tls-client-cert", "", "Path to PEM file with Redis client certificate (requires --redis-tls-client-key)")
 	pflag.String("redis-tls-client-key", "", "Path to PEM file with Redis client private key (requires --redis-tls-client-cert)")
 	pflag.String("redis-tls-ca-cert", "", "Path to PEM file with trusted CA certificate(s) for Redis server verification")
+	pflag.Bool("log-metrics", false, "Also emit collected Redis stream metrics as zerolog JSON (in addition to Prometheus)")
+	pflag.String("log-metrics-file", "", "Write metric logs to this file instead of stdout (only used with --log-metrics)")
 
 	if err := v.BindPFlag("redis.addr", pflag.Lookup("redis-addr")); err != nil {
 		return nil, err
@@ -94,6 +100,12 @@ func loadConfig() (*config, error) {
 	if err := v.BindPFlag("listen_addr", pflag.Lookup("listen-addr")); err != nil {
 		return nil, err
 	}
+	if err := v.BindPFlag("log_metrics", pflag.Lookup("log-metrics")); err != nil {
+		return nil, err
+	}
+	if err := v.BindPFlag("log_metrics_file", pflag.Lookup("log-metrics-file")); err != nil {
+		return nil, err
+	}
 
 	pflag.Parse()
 
@@ -104,6 +116,9 @@ func loadConfig() (*config, error) {
 
 	if err := validateRedisTLSOptions(cfg.Redis); err != nil {
 		return nil, err
+	}
+	if cfg.LogMetricsFile != "" && !cfg.LogMetrics {
+		return nil, fmt.Errorf("--log-metrics-file requires --log-metrics")
 	}
 
 	return &cfg, nil

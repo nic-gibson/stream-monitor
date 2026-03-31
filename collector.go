@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -17,6 +18,22 @@ type streamCollector struct {
 	gauges      *streamGauges
 	prevStreams map[string]bool
 	prevGroups  map[string]bool
+	metricsLog  *zerolog.Logger
+}
+
+type groupMetricSnapshot struct {
+	Name       string `json:"name"`
+	Consumers  int64  `json:"consumers"`
+	Pending    int64  `json:"pending"`
+	Lag        int64  `json:"lag"`
+}
+
+type streamMetricSnapshot struct {
+	Stream       string                `json:"stream"`
+	Length       int64                 `json:"length"`
+	EntriesAdded int64                 `json:"entries_added"`
+	Groups       int                   `json:"groups"`
+	GroupDetails []groupMetricSnapshot `json:"group_details,omitempty"`
 }
 
 type streamGauges struct {
@@ -28,9 +45,10 @@ type streamGauges struct {
 	groupLag         *prometheus.GaugeVec
 }
 
-func newStreamCollector(rdb *redis.Client) *streamCollector {
+func newStreamCollector(rdb *redis.Client, metricsLog *zerolog.Logger) *streamCollector {
 	return &streamCollector{
 		rdb:         rdb,
+		metricsLog:  metricsLog,
 		prevStreams: make(map[string]bool),
 		prevGroups:  make(map[string]bool),
 		gauges: &streamGauges{
@@ -129,6 +147,11 @@ func (c *streamCollector) collect(ctx context.Context) {
 	seenStreams := make(map[string]bool)
 	seenGroups := make(map[string]bool)
 
+	var metricSnapshots []streamMetricSnapshot
+	if c.metricsLog != nil {
+		metricSnapshots = make([]streamMetricSnapshot, 0, len(streams))
+	}
+
 	for _, stream := range streams {
 		seenStreams[stream] = true
 
@@ -147,10 +170,29 @@ func (c *streamCollector) collect(ctx context.Context) {
 		if err != nil {
 			log.Error().Err(err).Str("stream", stream).Msg("stream consumer groups")
 			c.gauges.streamGroups.WithLabelValues(stream).Set(0)
+			if c.metricsLog != nil {
+				metricSnapshots = append(metricSnapshots, streamMetricSnapshot{
+					Stream:       stream,
+					Length:       info.Length,
+					EntriesAdded: info.EntriesAdded,
+					Groups:       0,
+				})
+			}
 			continue
 		}
 
 		c.gauges.streamGroups.WithLabelValues(stream).Set(float64(len(groups)))
+
+		var snap streamMetricSnapshot
+		if c.metricsLog != nil {
+			snap = streamMetricSnapshot{
+				Stream:       stream,
+				Length:       info.Length,
+				EntriesAdded: info.EntriesAdded,
+				Groups:       len(groups),
+				GroupDetails: make([]groupMetricSnapshot, 0, len(groups)),
+			}
+		}
 
 		for _, g := range groups {
 			key := stream + "\x00" + g.Name
@@ -158,12 +200,36 @@ func (c *streamCollector) collect(ctx context.Context) {
 			c.gauges.groupConsumers.WithLabelValues(stream, g.Name).Set(float64(g.Consumers))
 			c.gauges.groupPending.WithLabelValues(stream, g.Name).Set(float64(g.Pending))
 			c.gauges.groupLag.WithLabelValues(stream, g.Name).Set(float64(g.Lag))
+			if c.metricsLog != nil {
+				snap.GroupDetails = append(snap.GroupDetails, groupMetricSnapshot{
+					Name:      g.Name,
+					Consumers: int64(g.Consumers),
+					Pending:   int64(g.Pending),
+					Lag:       g.Lag,
+				})
+			}
+		}
+
+		if c.metricsLog != nil {
+			metricSnapshots = append(metricSnapshots, snap)
 		}
 	}
 
 	c.removeStaleMetrics(seenStreams, seenGroups)
 	c.prevStreams = seenStreams
 	c.prevGroups = seenGroups
+
+	c.emitMetricSnapshots(metricSnapshots)
+}
+
+func (c *streamCollector) emitMetricSnapshots(streams []streamMetricSnapshot) {
+	if c.metricsLog == nil {
+		return
+	}
+	c.metricsLog.Info().
+		Int("stream_count", len(streams)).
+		Interface("streams", streams).
+		Msg("redis stream metrics")
 }
 
 func (c *streamCollector) removeStaleMetrics(seenStreams map[string]bool, seenGroups map[string]bool) {
