@@ -52,17 +52,18 @@ go build -o stream-mon .
 | `--redis-password` | `""` | Redis password |
 | `--poll-interval` | `30s` | Interval between stream scans |
 | `--listen-addr` | `:9090` | HTTP address for metrics and health endpoints |
+| `--filter` | `.+` | Stream name filter | 
 
 ## Prometheus Metrics
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `redis_stream_length` | Gauge | `stream` | Number of entries in the stream |
-| `redis_stream_consumer_groups` | Gauge | `stream` | Number of consumer groups |
-| `redis_stream_entries_added_total` | Gauge | `stream` | Total entries ever added |
-| `redis_stream_group_consumers` | Gauge | `stream`, `group` | Consumers in the group |
-| `redis_stream_group_pending` | Gauge | `stream`, `group` | Pending (unacked) entries |
-| `redis_stream_group_lag` | Gauge | `stream`, `group` | Entries not yet delivered |
+| `redis_stream_length` | Gauge | `redis`, `stream` | Number of entries in the stream (`redis` = monitored instance `host:port`) |
+| `redis_stream_consumer_groups` | Gauge | `redis`, `stream` | Number of consumer groups |
+| `redis_stream_entries_added_total` | Gauge | `redis`, `stream` | Total entries ever added |
+| `redis_stream_group_consumers` | Gauge | `redis`, `stream`, `group` | Consumers in the group |
+| `redis_stream_group_pending` | Gauge | `redis`, `stream`, `group` | Pending (unacked) entries |
+| `redis_stream_group_lag` | Gauge | `redis`, `stream`, `group` | Entries not yet delivered |
 
 ## Prometheus Configuration
 

@@ -68,7 +68,10 @@ func main() {
 		defer metricsLogFile.Close()
 	}
 
-	collector := newStreamCollector(rdb, metricsLog)
+	collector, err := newStreamCollector(rdb, metricsLog, cfg.Redis.Addr, cfg.Filter)
+	if err != nil {
+		log.Fatal().Err(err).Msg("create stream collector")
+	}
 	prometheus.MustRegister(collector)
 
 	http.Handle("/metrics", promhttp.Handler())

@@ -9,4 +9,4 @@ Import JSON from **Dashboards → New → Import → Upload JSON file** (Grafana
 | `dashboards/strmon-redis-streams.json` | Full view: stream length, entries added, groups, per-group pending/lag/consumers, tables. Variables: Prometheus datasource, `stream`, `group` (regex `.*` when “All”). |
 | `dashboards/strmon-summary.json` | Compact stats: max lag, sum pending, stream count, sum lengths, top-10 lag series. |
 
-After import, open the dashboard and choose your **Prometheus** datasource if prompted. Variable queries use `label_values(redis_stream_length, stream)` and `label_values(redis_stream_group_lag, group)`; they need at least one scrape with data.
+After import, open the dashboard and choose your **Prometheus** datasource if prompted. Dashboards include a **Redis** variable (`redis_addr`, label `redis` on metrics, value `host:port`). **Stream** / **Group** variables depend on the selected Redis instance(s). At least one scrape with data is required for variables to populate.

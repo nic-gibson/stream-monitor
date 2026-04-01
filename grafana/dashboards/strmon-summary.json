@@ -36,7 +36,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "max(redis_stream_group_lag{stream=~\"$stream\",group=~\"$group\"})",
+          "expr": "max(redis_stream_group_lag{redis=~\"$redis_addr\",stream=~\"$stream\",group=~\"$group\"})",
           "refId": "A"
         }
       ],
@@ -69,7 +69,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(redis_stream_group_pending{stream=~\"$stream\",group=~\"$group\"})",
+          "expr": "sum(redis_stream_group_pending{redis=~\"$redis_addr\",stream=~\"$stream\",group=~\"$group\"})",
           "refId": "A"
         }
       ],
@@ -94,7 +94,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count(count by (stream) (redis_stream_length{stream=~\"$stream\"}))",
+          "expr": "count(count by (stream) (redis_stream_length{redis=~\"$redis_addr\",stream=~\"$stream\"}))",
           "refId": "A"
         }
       ],
@@ -116,7 +116,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(redis_stream_length{stream=~\"$stream\"})",
+          "expr": "sum(redis_stream_length{redis=~\"$redis_addr\",stream=~\"$stream\"})",
           "refId": "A"
         }
       ],
@@ -140,7 +140,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "topk(10, redis_stream_group_lag{stream=~\"$stream\",group=~\"$group\"})",
+          "expr": "topk(10, redis_stream_group_lag{redis=~\"$redis_addr\",stream=~\"$stream\",group=~\"$group\"})",
           "legendFormat": "{{stream}} / {{group}}",
           "refId": "A"
         }
@@ -168,10 +168,23 @@
         "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
         "datasource": { "type": "prometheus", "uid": "${datasource}" },
         "includeAll": true,
+        "label": "Redis",
+        "multi": true,
+        "name": "redis_addr",
+        "query": "label_values(redis_stream_length, redis)",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "includeAll": true,
         "label": "Stream",
         "multi": true,
         "name": "stream",
-        "query": "label_values(redis_stream_length, stream)",
+        "query": "label_values(redis_stream_length{redis=~\"$redis_addr\"}, stream)",
         "refresh": 2,
         "sort": 1,
         "type": "query"
@@ -184,7 +197,7 @@
         "label": "Group",
         "multi": true,
         "name": "group",
-        "query": "label_values(redis_stream_group_lag, group)",
+        "query": "label_values(redis_stream_group_lag{redis=~\"$redis_addr\"}, group)",
         "refresh": 2,
         "sort": 1,
         "type": "query"

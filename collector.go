@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -26,12 +27,14 @@ type streamFetchResult struct {
 }
 
 type streamCollector struct {
-	rdb         *redis.Client
-	mu          sync.RWMutex
-	gauges      *streamGauges
-	prevStreams map[string]bool
-	prevGroups  map[string]bool
-	metricsLog  *zerolog.Logger
+	rdb           *redis.Client
+	redis         string         // Prometheus label "redis": host:port of monitored instance
+	streamPattern *regexp.Regexp // Regular expression to filter streams
+	mu            sync.RWMutex
+	gauges        *streamGauges
+	prevStreams   map[string]bool
+	prevGroups    map[string]bool
+	metricsLog    *zerolog.Logger
 }
 
 type groupMetricSnapshot struct {
@@ -58,57 +61,63 @@ type streamGauges struct {
 	groupLag         *prometheus.GaugeVec
 }
 
-func newStreamCollector(rdb *redis.Client, metricsLog *zerolog.Logger) *streamCollector {
+func newStreamCollector(rdb *redis.Client, metricsLog *zerolog.Logger, redisAddr string, filter string) (*streamCollector, error) {
+	streamPattern, err := regexp.Compile(filter)
+	if err != nil {
+		return nil, err
+	}
 	return &streamCollector{
-		rdb:         rdb,
-		metricsLog:  metricsLog,
-		prevStreams: make(map[string]bool),
-		prevGroups:  make(map[string]bool),
+		rdb:           rdb,
+		redis:         redisAddr,
+		metricsLog:    metricsLog,
+		streamPattern: streamPattern,
+		prevStreams:   make(map[string]bool),
+		prevGroups:    make(map[string]bool),
 		gauges: &streamGauges{
 			streamLength: prometheus.NewGaugeVec(
 				prometheus.GaugeOpts{
 					Name: "redis_stream_length",
 					Help: "Number of entries in the Redis stream",
 				},
-				[]string{"stream"},
+				[]string{"redis", "stream"},
 			),
 			streamGroups: prometheus.NewGaugeVec(
 				prometheus.GaugeOpts{
 					Name: "redis_stream_consumer_groups",
 					Help: "Number of consumer groups for the stream",
 				},
-				[]string{"stream"},
+				[]string{"redis", "stream"},
 			),
 			streamEntriesAdd: prometheus.NewGaugeVec(
 				prometheus.GaugeOpts{
 					Name: "redis_stream_entries_added_total",
 					Help: "Total entries ever added to the stream",
 				},
-				[]string{"stream"},
+				[]string{"redis", "stream"},
 			),
 			groupConsumers: prometheus.NewGaugeVec(
 				prometheus.GaugeOpts{
 					Name: "redis_stream_group_consumers",
 					Help: "Number of consumers in the consumer group",
 				},
-				[]string{"stream", "group"},
+				[]string{"redis", "stream", "group"},
 			),
 			groupPending: prometheus.NewGaugeVec(
 				prometheus.GaugeOpts{
 					Name: "redis_stream_group_pending",
 					Help: "Number of pending entries in the consumer group",
 				},
-				[]string{"stream", "group"},
+				[]string{"redis", "stream", "group"},
 			),
 			groupLag: prometheus.NewGaugeVec(
 				prometheus.GaugeOpts{
 					Name: "redis_stream_group_lag",
 					Help: "Number of entries not yet delivered to the consumer group",
 				},
-				[]string{"stream", "group"},
+				[]string{"redis", "stream", "group"},
 			),
 		},
-	}
+	}, nil
 }
 
 func (c *streamCollector) Describe(ch chan<- *prometheus.Desc) {
@@ -180,12 +189,12 @@ func (c *streamCollector) collect(ctx context.Context) {
 		}
 
 		info := r.info
-		c.gauges.streamLength.WithLabelValues(stream).Set(float64(info.Length))
-		c.gauges.streamEntriesAdd.WithLabelValues(stream).Set(float64(info.EntriesAdded))
+		c.gauges.streamLength.WithLabelValues(c.redis, stream).Set(float64(info.Length))
+		c.gauges.streamEntriesAdd.WithLabelValues(c.redis, stream).Set(float64(info.EntriesAdded))
 
 		if !r.groupsOK {
 			log.Error().Err(r.groupsErr).Str("stream", stream).Msg("stream consumer groups")
-			c.gauges.streamGroups.WithLabelValues(stream).Set(0)
+			c.gauges.streamGroups.WithLabelValues(c.redis, stream).Set(0)
 			if c.metricsLog != nil {
 				metricSnapshots = append(metricSnapshots, streamMetricSnapshot{
 					Stream:       stream,
@@ -198,7 +207,7 @@ func (c *streamCollector) collect(ctx context.Context) {
 		}
 
 		groups := r.groups
-		c.gauges.streamGroups.WithLabelValues(stream).Set(float64(len(groups)))
+		c.gauges.streamGroups.WithLabelValues(c.redis, stream).Set(float64(len(groups)))
 
 		var snap streamMetricSnapshot
 		if c.metricsLog != nil {
@@ -214,9 +223,9 @@ func (c *streamCollector) collect(ctx context.Context) {
 		for _, g := range groups {
 			key := stream + "\x00" + g.Name
 			seenGroups[key] = true
-			c.gauges.groupConsumers.WithLabelValues(stream, g.Name).Set(float64(g.Consumers))
-			c.gauges.groupPending.WithLabelValues(stream, g.Name).Set(float64(g.Pending))
-			c.gauges.groupLag.WithLabelValues(stream, g.Name).Set(float64(g.Lag))
+			c.gauges.groupConsumers.WithLabelValues(c.redis, stream, g.Name).Set(float64(g.Consumers))
+			c.gauges.groupPending.WithLabelValues(c.redis, stream, g.Name).Set(float64(g.Pending))
+			c.gauges.groupLag.WithLabelValues(c.redis, stream, g.Name).Set(float64(g.Lag))
 			if c.metricsLog != nil {
 				snap.GroupDetails = append(snap.GroupDetails, groupMetricSnapshot{
 					Name:      g.Name,
@@ -312,9 +321,9 @@ func (c *streamCollector) emitMetricSnapshots(streams []streamMetricSnapshot) {
 func (c *streamCollector) removeStaleMetrics(seenStreams map[string]bool, seenGroups map[string]bool) {
 	for stream := range c.prevStreams {
 		if !seenStreams[stream] {
-			c.gauges.streamLength.DeleteLabelValues(stream)
-			c.gauges.streamGroups.DeleteLabelValues(stream)
-			c.gauges.streamEntriesAdd.DeleteLabelValues(stream)
+			c.gauges.streamLength.DeleteLabelValues(c.redis, stream)
+			c.gauges.streamGroups.DeleteLabelValues(c.redis, stream)
+			c.gauges.streamEntriesAdd.DeleteLabelValues(c.redis, stream)
 		}
 	}
 	for key := range c.prevGroups {
@@ -324,9 +333,9 @@ func (c *streamCollector) removeStaleMetrics(seenStreams map[string]bool, seenGr
 		}
 		stream, group := parts[0], parts[1]
 		if !seenGroups[key] {
-			c.gauges.groupConsumers.DeleteLabelValues(stream, group)
-			c.gauges.groupPending.DeleteLabelValues(stream, group)
-			c.gauges.groupLag.DeleteLabelValues(stream, group)
+			c.gauges.groupConsumers.DeleteLabelValues(c.redis, stream, group)
+			c.gauges.groupPending.DeleteLabelValues(c.redis, stream, group)
+			c.gauges.groupLag.DeleteLabelValues(c.redis, stream, group)
 		}
 	}
 }

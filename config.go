@@ -10,11 +10,12 @@ import (
 )
 
 type config struct {
-	Redis          redisConfig     `mapstructure:"redis"`
-	PollInterval   time.Duration   `mapstructure:"poll_interval"`
-	ListenAddr     string          `mapstructure:"listen_addr"`
-	LogMetrics     bool            `mapstructure:"log_metrics"`
-	LogMetricsFile string          `mapstructure:"log_metrics_file"`
+	Redis          redisConfig   `mapstructure:"redis"`
+	PollInterval   time.Duration `mapstructure:"poll_interval"`
+	ListenAddr     string        `mapstructure:"listen_addr"`
+	LogMetrics     bool          `mapstructure:"log_metrics"`
+	LogMetricsFile string        `mapstructure:"log_metrics_file"`
+	Filter         string        `mapstructure:"filter"`
 }
 
 type redisConfig struct {
@@ -69,6 +70,7 @@ func loadConfig() (*config, error) {
 	pflag.String("redis-tls-ca-cert", "", "Path to PEM file with trusted CA certificate(s) for Redis server verification")
 	pflag.Bool("log-metrics", false, "Also emit collected Redis stream metrics as zerolog JSON (in addition to Prometheus)")
 	pflag.String("log-metrics-file", "", "Write metric logs to this file instead of stdout (only used with --log-metrics)")
+	pflag.String("filter", ".+", "Regular expression to filter stream names ")
 
 	if err := v.BindPFlag("redis.addr", pflag.Lookup("redis-addr")); err != nil {
 		return nil, err
@@ -104,6 +106,9 @@ func loadConfig() (*config, error) {
 		return nil, err
 	}
 	if err := v.BindPFlag("log_metrics_file", pflag.Lookup("log-metrics-file")); err != nil {
+		return nil, err
+	}
+	if err := v.BindPFlag("filter", pflag.Lookup("filter")); err != nil {
 		return nil, err
 	}
 

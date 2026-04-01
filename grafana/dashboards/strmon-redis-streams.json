@@ -55,7 +55,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "redis_stream_length{stream=~\"$stream\"}",
+          "expr": "redis_stream_length{redis=~\"$redis_addr\",stream=~\"$stream\"}",
           "legendFormat": "{{stream}}",
           "range": true,
           "refId": "A"
@@ -89,7 +89,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "redis_stream_entries_added_total{stream=~\"$stream\"}",
+          "expr": "redis_stream_entries_added_total{redis=~\"$redis_addr\",stream=~\"$stream\"}",
           "legendFormat": "{{stream}}",
           "range": true,
           "refId": "A"
@@ -118,7 +118,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "redis_stream_consumer_groups{stream=~\"$stream\"}",
+          "expr": "redis_stream_consumer_groups{redis=~\"$redis_addr\",stream=~\"$stream\"}",
           "legendFormat": "{{stream}}",
           "range": true,
           "refId": "A"
@@ -158,7 +158,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "redis_stream_group_pending{stream=~\"$stream\",group=~\"$group\"}",
+          "expr": "redis_stream_group_pending{redis=~\"$redis_addr\",stream=~\"$stream\",group=~\"$group\"}",
           "legendFormat": "{{stream}} / {{group}}",
           "range": true,
           "refId": "A"
@@ -187,7 +187,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "redis_stream_group_lag{stream=~\"$stream\",group=~\"$group\"}",
+          "expr": "redis_stream_group_lag{redis=~\"$redis_addr\",stream=~\"$stream\",group=~\"$group\"}",
           "legendFormat": "{{stream}} / {{group}}",
           "range": true,
           "refId": "A"
@@ -217,7 +217,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "redis_stream_group_consumers{stream=~\"$stream\",group=~\"$group\"}",
+          "expr": "redis_stream_group_consumers{redis=~\"$redis_addr\",stream=~\"$stream\",group=~\"$group\"}",
           "legendFormat": "{{stream}} / {{group}}",
           "range": true,
           "refId": "A"
@@ -255,7 +255,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "redis_stream_group_lag{stream=~\"$stream\",group=~\"$group\"}",
+          "expr": "redis_stream_group_lag{redis=~\"$redis_addr\",stream=~\"$stream\",group=~\"$group\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -297,7 +297,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "redis_stream_group_pending{stream=~\"$stream\",group=~\"$group\"}",
+          "expr": "redis_stream_group_pending{redis=~\"$redis_addr\",stream=~\"$stream\",group=~\"$group\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -341,14 +341,13 @@
         "allValue": ".*",
         "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
         "datasource": { "type": "prometheus", "uid": "${datasource}" },
-        "definition": "label_values(redis_stream_length, stream)",
         "hide": 0,
         "includeAll": true,
-        "label": "Stream",
+        "label": "Redis",
         "multi": true,
-        "name": "stream",
+        "name": "redis_addr",
         "options": [],
-        "query": "label_values(redis_stream_length, stream)",
+        "query": "label_values(redis_stream_length, redis)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -359,14 +358,32 @@
         "allValue": ".*",
         "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
         "datasource": { "type": "prometheus", "uid": "${datasource}" },
-        "definition": "label_values(redis_stream_group_lag, group)",
+        "definition": "label_values(redis_stream_length{redis=~\"$redis_addr\"}, stream)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Stream",
+        "multi": true,
+        "name": "stream",
+        "options": [],
+        "query": "label_values(redis_stream_length{redis=~\"$redis_addr\"}, stream)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(redis_stream_group_lag{redis=~\"$redis_addr\"}, group)",
         "hide": 0,
         "includeAll": true,
         "label": "Group",
         "multi": true,
         "name": "group",
         "options": [],
-        "query": "label_values(redis_stream_group_lag, group)",
+        "query": "label_values(redis_stream_group_lag{redis=~\"$redis_addr\"}, group)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
