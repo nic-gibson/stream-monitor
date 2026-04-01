@@ -35,10 +35,10 @@ type streamCollector struct {
 }
 
 type groupMetricSnapshot struct {
-	Name       string `json:"name"`
-	Consumers  int64  `json:"consumers"`
-	Pending    int64  `json:"pending"`
-	Lag        int64  `json:"lag"`
+	Name      string `json:"name"`
+	Consumers int64  `json:"consumers"`
+	Pending   int64  `json:"pending"`
+	Lag       int64  `json:"lag"`
 }
 
 type streamMetricSnapshot struct {
@@ -148,6 +148,7 @@ func (c *streamCollector) run(ctx context.Context, interval time.Duration) {
 }
 
 func (c *streamCollector) collect(ctx context.Context) {
+
 	streams, err := c.findStreams(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("find streams")
@@ -236,9 +237,11 @@ func (c *streamCollector) collect(ctx context.Context) {
 	c.prevGroups = seenGroups
 
 	c.emitMetricSnapshots(metricSnapshots)
+
 }
 
 func (c *streamCollector) fetchStreamData(ctx context.Context, stream string) streamFetchResult {
+
 	r := streamFetchResult{stream: stream}
 	info, err := c.rdb.XInfoStream(ctx, stream).Result()
 	if err != nil {

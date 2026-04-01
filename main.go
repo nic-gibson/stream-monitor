@@ -71,7 +71,7 @@ func main() {
 	collector := newStreamCollector(rdb, metricsLog)
 	prometheus.MustRegister(collector)
 
-	http.Handle("/metrics", promhttp.Handler())
+	http.Handle("/metrics", WrapperHandler(promhttp.Handler())
 
 	server := &http.Server{Addr: cfg.ListenAddr}
 	go func() {
@@ -93,4 +93,11 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("HTTP server shutdown")
 	}
+}
+
+func WrapperHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Info().Msg("wrapper handler called")
+		h.ServeHTTP(w, r)
+	})
 }

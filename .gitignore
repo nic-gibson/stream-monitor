@@ -5,6 +5,7 @@
 *.test
 
 strmon
+cmd/streamtest/streamtest
 
 # Code coverage profiles and other test artifacts
 *.out
