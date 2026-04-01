@@ -1,4 +1,4 @@
-module github.com/nic-gibson/strmon
+module github.com/nic-gibson/stream-monitor
 
 go 1.24.0
 
