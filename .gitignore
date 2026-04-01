@@ -5,6 +5,9 @@
 *.test
 
 strmon
+strmon_darwin_arm
+strmon_linux_amd
+strmon.exe
 cmd/streamtest/streamtest
 
 # Code coverage profiles and other test artifacts
